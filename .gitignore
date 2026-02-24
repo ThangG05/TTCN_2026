@@ -1,0 +1,17 @@
+# ===== .NET =====
+bin/
+obj/
+.vs/
+
+# ===== Flutter =====
+build/
+.dart_tool/
+.metadata
+
+# ===== IDE =====
+.vscode/
+.idea/
+
+# ===== Windows =====
+Thumbs.db
+desktop.ini
