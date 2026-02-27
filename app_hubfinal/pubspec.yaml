@@ -29,6 +29,7 @@ dependencies:
   pinput: ^6.0.2
   image_picker: ^1.0.4
   image: ^4.1.7
+  http: ^1.2.0  # Thêm dòng này (kiểm tra thụt lề cho đúng)
 
 
 dev_dependencies:

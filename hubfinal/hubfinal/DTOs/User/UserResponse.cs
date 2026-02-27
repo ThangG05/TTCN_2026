@@ -1,4 +1,6 @@
-﻿namespace hubfinal.DTOs;
+﻿
+namespace hubfinal.DTOs;
+
 public class UserResponse
 {
     public Guid Id { get; set; }
@@ -9,5 +11,17 @@ public class UserResponse
     public string? AvatarUrl { get; set; }
     public string? Bio { get; set; }
     public List<string> Roles { get; set; }
+
+    // Thêm các trường này
+    public int PostCount { get; set; }
+    public int FriendCount { get; set; }
+    public int GroupCount { get; set; }
+    public List<PostThumbnailDto> Posts { get; set; } = new();
+}
+
+public class PostThumbnailDto
+{
+    public Guid Id { get; set; }
+    public string? ImageUrl { get; set; }
 }
 

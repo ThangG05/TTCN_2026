@@ -2,6 +2,7 @@ import 'package:app_hubfinal/modules/auth/pages/forgot/forgot_otp_page.dart';
 import 'package:app_hubfinal/modules/auth/pages/forgot/forgot_password_page.dart';
 import 'package:app_hubfinal/modules/auth/pages/forgot/reset_password_page.dart';
 import 'package:app_hubfinal/modules/auth/pages/signup/otp_page.dart';
+import 'package:app_hubfinal/modules/user/pages/user_search_page.dart';
 import 'package:flutter/material.dart';
 import '../../modules/auth/pages/signin/login_page.dart';
 import '../../modules/auth/pages/signup/register_page.dart';
@@ -21,6 +22,7 @@ class AppRouter {
     '/forgot-password' : (_) => const ForgotPasswordPage(),
     '/reset-password' : (_) => const ResetPasswordPage(),
     '/edit-profile': (_) => const EditProfilePage(),
+    '/user-search': (context) => const UserSearchPage(),
 
 
 

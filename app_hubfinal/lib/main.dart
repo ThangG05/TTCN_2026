@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'core/router/app_router.dart';
 import 'modules/auth/auth_provider.dart';
 import 'modules/user/user_provider.dart';
+import 'modules/friend/friend_provider.dart'; // 1. Thêm import này (kiểm tra lại đường dẫn file của bạn)
 
 void main() {
   runApp(const MyApp());
@@ -18,6 +19,7 @@ class MyApp extends StatelessWidget {
       providers: [
         ChangeNotifierProvider(create: (_) => AuthProvider()),
         ChangeNotifierProvider(create: (_) => UserProvider()),
+        ChangeNotifierProvider(create: (_) => FriendProvider()), // 2. Thêm dòng này ở đây
       ],
       child: MaterialApp(
         debugShowCheckedModeBanner: false,

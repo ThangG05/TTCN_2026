@@ -13,6 +13,10 @@ public class User
     public bool IsEmailVerified { get; set; }
     public bool IsLocked { get; set; }
     public DateTime CreatedAt { get; set; }
-
     public ICollection<UserRole> UserRoles { get; set; }
+    public virtual ICollection<Post> Posts { get; set; } = new List<Post>();
+
+    // Giả sử bạn có bảng Friend và GroupMember, hãy thêm vào nếu đã tạo Entity
+    public virtual ICollection<Friend> Friends { get; set; } = new List<Friend>();
+    public virtual ICollection<GroupMember> GroupMembers { get; set; } = new List<GroupMember>();
 }

@@ -1,9 +1,9 @@
 ﻿using hubfinal.Data;
+using hubfinal.DTOs;
 using hubfinal.DTOs.User;
-using hubfinal.Entities;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
+using Microsoft.EntityFrameworkCore;
 
 namespace hubfinal.Services
 {
@@ -18,10 +18,37 @@ namespace hubfinal.Services
             _env = env;
         }
 
-        public async Task<User?> GetCurrentUserAsync(Guid userId)
+        public async Task<UserResponse?> GetCurrentUserDtoAsync(Guid userId)
         {
-            return await _context.Users
+            var user = await _context.Users
+                .AsNoTracking()
+                .Include(u => u.Posts)
+                .Include(u => u.Friends)
+                .Include(u => u.GroupMembers)
                 .FirstOrDefaultAsync(x => x.Id == userId);
+
+            if (user == null) return null;
+
+            return new UserResponse
+            {
+                Id = user.Id,
+                Username = user.Username,
+                DisplayName = user.DisplayName ?? user.Username,
+                AvatarUrl = user.AvatarUrl,
+                Bio = user.Bio,
+                StudentCode = user.StudentCode,
+
+                // Dùng toán tử an toàn để tránh lỗi 500
+                PostCount = user.Posts?.Count ?? 0,
+                FriendCount = user.Friends?.Count ?? 0,
+                GroupCount = user.GroupMembers?.Count ?? 0,
+
+                Posts = user.Posts?.Select(p => new PostThumbnailDto
+                {
+                    Id = p.Id,
+                    ImageUrl = p.ImageUrl
+                }).ToList() ?? new List<PostThumbnailDto>()
+            };
         }
 
         public async Task<bool> UpdateProfileAsync(Guid userId, UpdateProfileRequest request)
@@ -78,5 +105,6 @@ namespace hubfinal.Services
 
             return relativePath;
         }
+
     }
 }
