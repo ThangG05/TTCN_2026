@@ -1,12 +1,18 @@
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import 'core/router/app_router.dart';
+import 'firebase_options.dart';
 import 'modules/auth/auth_provider.dart';
 import 'modules/user/user_provider.dart';
 import 'modules/friend/friend_provider.dart'; // 1. Thêm import này (kiểm tra lại đường dẫn file của bạn)
 
-void main() {
+void main() async{
+  WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform, // Connect to Firebase
+  );
   runApp(const MyApp());
 }
 

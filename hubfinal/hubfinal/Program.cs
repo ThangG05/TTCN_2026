@@ -36,7 +36,7 @@ builder.Services.AddScoped<EmailService>();
 builder.Services.AddScoped<CurrentUser>();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<UserService>();
-
+builder.Services.AddScoped<FriendService>();
 // 4. Cấu hình Authentication
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options => {

@@ -1,100 +1,184 @@
 import 'dart:io';
 import 'package:dio/dio.dart';
-import 'package:flutter/cupertino.dart';
+import 'package:flutter/foundation.dart';
 import '../../core/api/api_client.dart';
 
 class UserApi {
 
-  static Future<Map<String, dynamic>> getMe() async {
-    final response = await ApiClient.dio.get('/users/me');
+  // =============================
+  // GET CURRENT USER
+  // =============================
 
-    if (response.data == null) {
-      throw Exception("User data is null");
+  static Future<Map<String, dynamic>?> getMe() async {
+    try {
+      final response = await ApiClient.dio.get('/users/me');
+
+      if (response.statusCode == 200 && response.data != null) {
+        return Map<String, dynamic>.from(response.data);
+      }
+
+      return null;
+    } catch (e) {
+      debugPrint("GetMe Error: $e");
+      return null;
     }
-
-    return Map<String, dynamic>.from(response.data);
   }
 
-  // 1. Đổi Future<void> thành Future<bool>
+  // =============================
+  // UPDATE PROFILE
+  // =============================
+
   static Future<bool> updateProfile({
     String? displayName,
     String? bio,
   }) async {
-    final Map<String, dynamic> data = {};
-    if (displayName != null) data['displayName'] = displayName;
-    if (bio != null) data['bio'] = bio;
+    try {
+      final Map<String, dynamic> data = {};
 
-    final response = await ApiClient.dio.put(
-      '/users/update-profile',
-      data: data,
-    );
+      if (displayName != null) data['displayName'] = displayName;
+      if (bio != null) data['bio'] = bio;
 
-    // Trả về true nếu status code là 200 (Thành công)
-    return response.statusCode == 200;
+      final response = await ApiClient.dio.put(
+        '/users/update-profile',
+        data: data,
+      );
+
+      return response.statusCode == 200;
+    } catch (e) {
+      debugPrint("UpdateProfile Error: $e");
+      return false;
+    }
   }
 
+  // =============================
+  // UPDATE AVATAR
+  // =============================
 
-  // 2. Đổi Future<void> thành Future<String?>
   static Future<String?> updateAvatar(String filePath) async {
-    if (filePath.isEmpty) {
-      throw Exception("File path is empty");
+    try {
+      if (filePath.isEmpty) {
+        throw Exception("File path is empty");
+      }
+
+      final file = File(filePath);
+
+      final formData = FormData.fromMap({
+        'file': await MultipartFile.fromFile(
+          file.path,
+          filename: file.path.split('/').last,
+        ),
+      });
+
+      final response = await ApiClient.dio.put(
+        '/users/update-avatar',
+        data: formData,
+        options: Options(contentType: 'multipart/form-data'),
+      );
+
+      if (response.statusCode == 200 && response.data != null) {
+        return response.data['avatarUrl']?.toString();
+      }
+
+      return null;
+    } catch (e) {
+      debugPrint("UpdateAvatar Error: $e");
+      return null;
     }
-
-    final file = File(filePath);
-    final formData = FormData.fromMap({
-      'file': await MultipartFile.fromFile(
-        file.path,
-        filename: file.path.split('/').last,
-      ),
-    });
-
-    final response = await ApiClient.dio.put(
-      '/users/update-avatar',
-      data: formData,
-      options: Options(
-        contentType: 'multipart/form-data',
-      ),
-    );
-
-    if (response.statusCode == 200 && response.data != null) {
-      // Trả về avatarUrl nhận được từ server (Ví dụ: response.data['avatarUrl'])
-      return response.data['avatarUrl']?.toString();
-    }
-    return null;
   }
-  // 3. Thêm hàm tìm kiếm người dùng
+
+  // =============================
+  // SEARCH USERS
+  // =============================
+
   static Future<List<dynamic>?> searchUsers(String name) async {
     try {
-      // Gửi request GET kèm query parameter 'name'
       final response = await ApiClient.dio.get(
         '/users/search',
         queryParameters: {'name': name},
       );
 
       if (response.statusCode == 200 && response.data != null) {
-        // Trả về danh sách dữ liệu (List<dynamic>) để Provider xử lý map sang Model
-        return response.data;
+        return List<dynamic>.from(response.data);
       }
+
       return null;
     } on DioException catch (e) {
-      // Xử lý lỗi từ Dio (ví dụ: lỗi mạng, lỗi server 500)
-      print("❌ UserApi Search Error: ${e.message}");
+      debugPrint("SearchUsers DioError: ${e.message}");
       return null;
     } catch (e) {
-      print("❌ UserApi Unexpected Error: $e");
+      debugPrint("SearchUsers Error: $e");
       return null;
     }
   }
+
+  // =============================
+  // SEND FRIEND REQUEST
+  // =============================
+
   static Future<bool> sendFriendRequest(String receiverId) async {
     try {
-      // Endpoint phải khớp với [HttpPost("send-request/{receiverId}")] ở Backend
-      final response = await ApiClient.dio.post('/users/send-request/$receiverId');
+      final response =
+      await ApiClient.dio.post('/users/send-request/$receiverId');
+
       return response.statusCode == 200;
+    } on DioException catch (e) {
+      debugPrint("SendFriendRequest DioError: ${e.response?.data}");
+      return false;
     } catch (e) {
-        debugPrint("❌ API Send Request Error: $e");
+      debugPrint("SendFriendRequest Error: $e");
       return false;
     }
   }
 
+  // =============================
+  // GET PENDING REQUESTS
+  // =============================
 
+  static Future<List<dynamic>?> getPendingRequests() async {
+    try {
+      final response =
+      await ApiClient.dio.get('/users/pending-requests');
+
+      if (response.statusCode == 200 && response.data != null) {
+        return List<dynamic>.from(response.data);
+      }
+
+      return null;
+    } catch (e) {
+      debugPrint("GetPendingRequests Error: $e");
+      return null;
+    }
+  }
+
+  // =============================
+  // ACCEPT FRIEND
+  // =============================
+
+  static Future<bool> acceptRequest(int requestId) async {
+    try {
+      final response =
+      await ApiClient.dio.post('/users/accept-request/$requestId');
+
+      return response.statusCode == 200;
+    } catch (e) {
+      debugPrint("AcceptRequest Error: $e");
+      return false;
+    }
+  }
+
+  // =============================
+  // DECLINE FRIEND
+  // =============================
+
+  static Future<bool> declineRequest(int requestId) async {
+    try {
+      final response =
+      await ApiClient.dio.delete('/users/decline-request/$requestId');
+
+      return response.statusCode == 200;
+    } catch (e) {
+      debugPrint("DeclineRequest Error: $e");
+      return false;
+    }
+  }
 }

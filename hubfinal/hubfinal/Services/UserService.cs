@@ -20,14 +20,18 @@ namespace hubfinal.Services
 
         public async Task<UserResponse?> GetCurrentUserDtoAsync(Guid userId)
         {
+            // 1. Lấy thông tin User cơ bản
             var user = await _context.Users
                 .AsNoTracking()
                 .Include(u => u.Posts)
-                .Include(u => u.Friends)
                 .Include(u => u.GroupMembers)
                 .FirstOrDefaultAsync(x => x.Id == userId);
 
             if (user == null) return null;
+
+      
+            var friendCount = await _context.Friends
+                .CountAsync(f => f.UserId == userId || f.FriendId == userId);
 
             return new UserResponse
             {
@@ -38,10 +42,11 @@ namespace hubfinal.Services
                 Bio = user.Bio,
                 StudentCode = user.StudentCode,
 
-                // Dùng toán tử an toàn để tránh lỗi 500
                 PostCount = user.Posts?.Count ?? 0,
-                FriendCount = user.Friends?.Count ?? 0,
                 GroupCount = user.GroupMembers?.Count ?? 0,
+
+                // Gán con số tổng hợp vào đây
+                FriendCount = friendCount,
 
                 Posts = user.Posts?.Select(p => new PostThumbnailDto
                 {
@@ -67,8 +72,6 @@ namespace hubfinal.Services
             await _context.SaveChangesAsync();
             return true;
         }
-
-        // ✅ UPLOAD AVATAR FIX
         public async Task<string?> UpdateAvatarAsync(Guid userId, IFormFile file)
         {
             var user = await _context.Users

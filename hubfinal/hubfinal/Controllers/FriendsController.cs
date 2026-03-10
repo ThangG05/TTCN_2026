@@ -1,6 +1,5 @@
 ﻿using hubfinal.Services;
 using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using System.Security.Claims;
 
@@ -21,11 +20,20 @@ namespace hubfinal.Controllers
             return Ok(await _friendService.GetMyFriendsAsync(userId));
         }
 
+        // Đổi Guid thành int cho requestId
         [HttpPost("accept/{requestId}")]
-        public async Task<IActionResult> Accept(Guid requestId)
+        public async Task<IActionResult> Accept(int requestId)
         {
             var result = await _friendService.AcceptFriendRequestAsync(requestId);
-            return result ? Ok() : BadRequest("Lỗi chấp nhận kết bạn");
+            return result ? Ok(new { message = "Đã trở thành bạn bè" }) : BadRequest("Lỗi chấp nhận kết bạn");
+        }
+
+        // Bổ sung Decline (Từ chối/Gỡ lời mời)
+        [HttpDelete("decline/{requestId}")]
+        public async Task<IActionResult> Decline(int requestId)
+        {
+            var result = await _friendService.DeclineFriendRequestAsync(requestId);
+            return result ? Ok(new { message = "Đã gỡ lời mời" }) : BadRequest("Không tìm thấy lời mời");
         }
 
         [HttpDelete("unfriend/{friendId}")]
@@ -33,7 +41,7 @@ namespace hubfinal.Controllers
         {
             var userId = Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
             var result = await _friendService.UnfriendAsync(userId, friendId);
-            return result ? Ok() : BadRequest("Không thể hủy kết bạn");
+            return result ? Ok(new { message = "Đã hủy kết bạn" }) : BadRequest("Không thể hủy kết bạn");
         }
     }
 }

@@ -1,166 +1,215 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:app_hubfinal/core/config/app_config.dart';
 
-// Import Providers
-import '../friend_provider.dart';
+import '../friend_provider.dart'; 
 import '../../user/user_provider.dart';
-
-// Import Models
-import '../friend_model.dart';
 import '../../user/user_search_dto.dart';
 
-// Import Widgets
-import '../widgets/friend_card.dart';
-
 class FriendListPage extends StatefulWidget {
-  final Map<String, dynamic> user; // Nhận từ ProfilePage
-  const FriendListPage({super.key, required this.user});
+  const FriendListPage({super.key, required Map<String, dynamic> user});
 
   @override
   State<FriendListPage> createState() => _FriendListPageState();
 }
 
-class _FriendListPageState extends State<FriendListPage> with SingleTickerProviderStateMixin {
-  late TabController _tabController;
+class _FriendListPageState extends State<FriendListPage> {
   final TextEditingController _searchController = TextEditingController();
+  Timer? _debounce;
 
   @override
   void initState() {
     super.initState();
-    // 3 Tab: Bạn bè, Lời mời, Tìm bạn
-    _tabController = TabController(length: 3, vsync: this);
-
-    // Load danh sách bạn bè hiện tại (Tab 1)
-    Future.microtask(() => context.read<FriendProvider>().loadFriends());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      // Tải cả danh sách bạn bè và lời mời chờ xử lý
+      context.read<FriendProvider>().initFriendData();
+    });
   }
 
   @override
   void dispose() {
-    _tabController.dispose();
     _searchController.dispose();
+    _debounce?.cancel();
     super.dispose();
+  }
+
+  void _onSearchChanged(String query) {
+    if (_debounce?.isActive ?? false) _debounce!.cancel();
+    _debounce = Timer(const Duration(milliseconds: 500), () {
+      if (!mounted) return;
+      context.read<UserProvider>().searchUsers(query);
+    });
   }
 
   @override
   Widget build(BuildContext context) {
-    final friendProvider = context.watch<FriendProvider>();
-
-    return Scaffold(
-      backgroundColor: Colors.white,
-      appBar: AppBar(
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios, color: Colors.black, size: 20),
-          onPressed: () => Navigator.pop(context),
-        ),
-        title: const Text(
-          "Mạng lưới Hub",
-          style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold),
-        ),
+    return DefaultTabController(
+      length: 3,
+      initialIndex: 2, // Mặc định mở Tab Tìm bạn mới
+      child: Scaffold(
         backgroundColor: Colors.white,
-        elevation: 0,
-        centerTitle: true,
-      ),
-      body: Column(
-        children: [
-          // 1. Header người dùng
-          _buildUserHeader(),
-
-          // 2. TabBar điều hướng
-          TabBar(
-            controller: _tabController,
-            labelColor: Colors.blue[800],
+        appBar: AppBar(
+          backgroundColor: Colors.white,
+          elevation: 0,
+          leading: const BackButton(color: Colors.black),
+          centerTitle: true,
+          title: const Text(
+            "Mạng lưới Hub",
+            style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold),
+          ),
+          bottom: const TabBar(
+            labelColor: Colors.blue,
             unselectedLabelColor: Colors.grey,
-            indicatorColor: Colors.blue[800],
+            indicatorColor: Colors.blue,
             indicatorWeight: 3,
-            tabs: const [
+            tabs: [
               Tab(text: "Bạn bè"),
               Tab(text: "Lời mời"),
               Tab(text: "Tìm bạn mới"),
             ],
           ),
+        ),
+        body: TabBarView(
+          children: [
+            _buildFriendsTab(), // Tab 0
+            _buildPendingTab(), // Tab 1
+            _buildSearchTab(),  // Tab 2
+          ],
+        ),
+      ),
+    );
+  }
 
-          // 3. Nội dung các Tab
-          Expanded(
-            child: TabBarView(
-              controller: _tabController,
-              children: [
-                _buildFriendListTab(friendProvider), // Tab 1
-                const Center(child: Text("Danh sách lời mời trống")), // Tab 2
-                _buildSearchTab(), // Tab 3 (Tìm kiếm tích hợp)
-              ],
-            ),
+  // =============================
+  // TAB 0: DANH SÁCH BẠN BÈ
+  // =============================
+  // lib/pages/friend/friend_list_page.dart
+  Widget _buildFriendsTab() {
+    return Consumer<FriendProvider>(
+      builder: (context, provider, child) {
+        if (provider.isLoading) return const Center(child: CircularProgressIndicator());
+
+        return RefreshIndicator(
+          onRefresh: () => provider.loadFriends(),
+          child: provider.friends.isEmpty
+              ? ListView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            children: const [
+              SizedBox(height: 100),
+              Center(child: Text("Bạn chưa có người bạn nào")),
+              Center(child: Text("Vuốt xuống để tải lại", style: TextStyle(color: Colors.grey, fontSize: 12))),
+            ],
+          )
+              : ListView.builder(
+            physics: const AlwaysScrollableScrollPhysics(),
+            itemCount: provider.friends.length,
+            itemBuilder: (context, index) {
+              final friend = provider.friends[index];
+              return ListTile(
+                leading: CircleAvatar(
+                  backgroundImage: (friend.avatarUrl != null)
+                      ? NetworkImage(friend.avatarUrl!)
+                      : const AssetImage('assets/images/default_avatar.png') as ImageProvider,
+                ),
+                title: Text(friend.displayName, style: const TextStyle(fontWeight: FontWeight.bold)),
+                subtitle: Text(friend.subtitle),
+                trailing: TextButton(
+                  onPressed: () => _showUnfriendDialog(friend.id, friend.displayName),
+                  child: const Text("Hủy kết bạn", style: TextStyle(color: Colors.red)),
+                ),
+              );
+            },
           ),
-        ],
-      ),
+        );
+      },
     );
   }
 
-  // --- WIDGET CÁC TAB ---
+  // =============================
+  // TAB 1: LỜI MỜI KẾT BẠN
+  // =============================
+  Widget _buildPendingTab() {
+    return Consumer<FriendProvider>(
+      builder: (context, provider, child) {
+        if (provider.pendingRequests.isEmpty) return const Center(child: Text("Không có lời mời nào"));
 
-  // Tab 1: Danh sách bạn bè chính thức
-  Widget _buildFriendListTab(FriendProvider provider) {
-    if (provider.isLoading) return const Center(child: CircularProgressIndicator());
-    if (provider.friends.isEmpty) {
-      return const Center(child: Text("Bạn chưa có người bạn nào", style: TextStyle(color: Colors.grey)));
-    }
-
-    return ListView.builder(
-      padding: const EdgeInsets.only(top: 10),
-      itemCount: provider.friends.length,
-      itemBuilder: (context, index) => FriendCard(
-        friend: provider.friends[index],
-        onUnfriend: () => _showUnfriendConfirm(provider.friends[index]),
-      ),
+        return ListView.builder(
+          itemCount: provider.pendingRequests.length,
+          itemBuilder: (context, index) {
+            final req = provider.pendingRequests[index];
+            return ListTile(
+              leading: CircleAvatar(
+                backgroundImage: (req['avatarUrl'] != null)
+                    ? NetworkImage(req['avatarUrl'])
+                    : const AssetImage('assets/images/default_avatar.png') as ImageProvider,
+              ),
+              title: Text(req['displayName'] ?? "Sinh viên Hub", style: const TextStyle(fontWeight: FontWeight.bold)),
+              subtitle: const Text("Đã gửi lời mời cho bạn"),
+              trailing: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  ElevatedButton(
+                    onPressed: () async {
+                      await provider.acceptFriend(req['id']);
+                    },
+                    style: ElevatedButton.styleFrom(backgroundColor: Colors.blue, foregroundColor: Colors.white),
+                    child: const Text("Chấp nhận"),
+                  ),
+                  const SizedBox(width: 8),
+                  IconButton(
+                    icon: const Icon(Icons.close, color: Colors.grey),
+                    onPressed: () => provider.declineFriend(req['id']),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
     );
   }
 
-  // Tab 3: Tìm kiếm người dùng mới
+  // =============================
+  // TAB 2: TÌM BẠN MỚI
+  // =============================
   Widget _buildSearchTab() {
-    final userProvider = context.watch<UserProvider>();
-
     return Column(
       children: [
-        // Thanh Search
         Padding(
-          padding: const EdgeInsets.all(15.0),
+          padding: const EdgeInsets.all(16),
           child: TextField(
             controller: _searchController,
-            onChanged: (value) => context.read<UserProvider>().searchUsers(value),
+            onChanged: _onSearchChanged,
             decoration: InputDecoration(
-              hintText: "Nhập tên hiển thị sinh viên...",
+              hintText: "Tìm kiếm sinh viên ...",
               prefixIcon: const Icon(Icons.search),
               filled: true,
               fillColor: Colors.grey[100],
-              contentPadding: const EdgeInsets.symmetric(vertical: 0),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(25),
-                borderSide: BorderSide.none,
-              ),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(30), borderSide: BorderSide.none),
             ),
           ),
         ),
-
-        // Kết quả tìm kiếm
         Expanded(
-          child: userProvider.isSearching
-              ? const Center(child: CircularProgressIndicator())
-              : userProvider.searchResults.isEmpty
-              ? const Center(child: Text("Tìm bạn bè để cùng học tập nào!"))
-              : ListView.builder(
-            itemCount: userProvider.searchResults.length,
-            itemBuilder: (context, index) {
-              final user = userProvider.searchResults[index];
-              return ListTile(
-                leading: CircleAvatar(
-                  backgroundImage: user.avatarUrl != null
-                      ? NetworkImage("${AppConfig.serverUrl}${user.avatarUrl}")
-                      : null,
-                  child: user.avatarUrl == null ? const Icon(Icons.person) : null,
-                ),
-                title: Text(user.displayName, style: const TextStyle(fontWeight: FontWeight.bold)),
-                subtitle: const Text("Sinh viên Hub"),
-                trailing: _buildSearchActionBtn(user),
+          child: Consumer<UserProvider>(
+            builder: (context, provider, child) {
+              if (provider.isSearching) return const Center(child: CircularProgressIndicator());
+              if (provider.searchResults.isEmpty) return const Center(child: Text("Nhập tên để tìm kiếm"));
+
+              return ListView.builder(
+                itemCount: provider.searchResults.length,
+                itemBuilder: (context, index) {
+                  final user = provider.searchResults[index];
+                  return ListTile(
+                    leading: CircleAvatar(
+                      backgroundImage: (user.avatarUrl != null)
+                          ? NetworkImage(user.avatarUrl!)
+                          : const AssetImage('assets/images/default_avatar.png') as ImageProvider,
+                    ),
+                    title: Text(user.displayName, style: const TextStyle(fontWeight: FontWeight.bold)),
+                    subtitle: Text(user.bio),
+                    trailing: _buildSearchActionButton(user),
+                  );
+                },
               );
             },
           ),
@@ -169,82 +218,37 @@ class _FriendListPageState extends State<FriendListPage> with SingleTickerProvid
     );
   }
 
-  // --- NÚT BẤM LOGIC CHO TÌM KIẾM ---
-  Widget _buildSearchActionBtn(UserSearchDto user) {
-    // Trường hợp đã là bạn
-    if (user.isFriend) {
-      return const Icon(Icons.check_circle, color: Colors.green);
-    }
+  Widget _buildSearchActionButton(UserSearchDto user) {
+    if (user.isFriend) return const Text("Bạn bè", style: TextStyle(color: Colors.grey));
+    if (user.hasSentRequest) return const Text("Đã gửi", style: TextStyle(color: Colors.blue));
 
-    // Trường hợp đã gửi yêu cầu (Status = 0)
-    if (user.hasSentRequest) {
-      return TextButton(
-          onPressed: null,
-          child: Text("Đã gửi", style: TextStyle(color: Colors.blue[300]))
+    if (user.isIncomingRequest) {
+      return OutlinedButton(
+        onPressed: () => DefaultTabController.of(context).animateTo(1),
+        style: OutlinedButton.styleFrom(foregroundColor: Colors.orange, side: const BorderSide(color: Colors.orange)),
+        child: const Text("Phản hồi"),
       );
     }
 
-    // Trường hợp chưa có quan hệ -> Nút Kết bạn
     return ElevatedButton(
-      onPressed: () async {
-        final success = await context.read<UserProvider>().sendRequest(user.id);
-        if (mounted && success) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text("Đã gửi lời mời tới ${user.displayName}")),
-          );
-        }
-      },
-      style: ElevatedButton.styleFrom(
-        backgroundColor: Colors.blue[600],
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      ),
-      child: const Text("Kết bạn", style: TextStyle(color: Colors.white, fontSize: 12)),
+      onPressed: () => context.read<UserProvider>().sendRequest(user.id),
+      style: ElevatedButton.styleFrom(backgroundColor: Colors.blue[50], foregroundColor: Colors.blue),
+      child: const Text("Kết bạn"),
     );
   }
 
-  // --- CÁC WIDGET PHỤ ---
-
-  Widget _buildUserHeader() {
-    final avatarUrl = widget.user['avatarUrl'];
-    return Padding(
-      padding: const EdgeInsets.all(20),
-      child: Row(
-        children: [
-          CircleAvatar(
-            radius: 35,
-            backgroundImage: avatarUrl != null && avatarUrl.toString().isNotEmpty
-                ? NetworkImage("${AppConfig.serverUrl}$avatarUrl")
-                : null,
-            child: avatarUrl == null ? const Icon(Icons.person, size: 35) : null,
-          ),
-          const SizedBox(width: 15),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                widget.user['displayName'] ?? "Người dùng Hub",
-                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-              ),
-              Text(widget.user['studentCode'] ?? "Mã sinh viên trống"),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showUnfriendConfirm(FriendModel friend) {
+  void _showUnfriendDialog(String friendId, String name) {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text("Hủy kết bạn"),
-        content: Text("Bạn có muốn xóa ${friend.displayName} khỏi danh sách?"),
+        content: Text("Bạn có chắc chắn muốn hủy kết bạn với $name?"),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text("Hủy")),
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text("Quay lại")),
           TextButton(
-            onPressed: () async {
+            onPressed: () {
+              context.read<FriendProvider>().handleUnfriend(friendId);
               Navigator.pop(context);
-              await context.read<FriendProvider>().handleUnfriend(friend.id);
             },
             child: const Text("Đồng ý", style: TextStyle(color: Colors.red)),
           ),

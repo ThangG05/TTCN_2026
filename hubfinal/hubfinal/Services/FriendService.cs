@@ -2,6 +2,7 @@
 using hubfinal.DTOs.Friend;
 using hubfinal.Entities;
 using Microsoft.EntityFrameworkCore;
+
 namespace hubfinal.Services
 {
     public class FriendService
@@ -9,42 +10,70 @@ namespace hubfinal.Services
         private readonly AppDbContext _context;
         public FriendService(AppDbContext context) => _context = context;
 
-        // 1. Lấy danh sách bạn bè (Từ bảng Friends)
         public async Task<List<FriendResponse>> GetMyFriendsAsync(Guid userId)
         {
-            return await _context.Friends
+            // Bước 1: Lấy danh sách thô từ DB kèm thông tin User liên quan
+            var friendships = await _context.Friends
+                .Include(f => f.User)
+                .Include(f => f.FriendUser)
                 .Where(f => f.UserId == userId || f.FriendId == userId)
-                .Select(f => new FriendResponse
+                .ToListAsync();
+
+            // Bước 2: Map sang Response ở bộ nhớ
+            return friendships.Select(f =>
+            {
+                // Nếu mình là UserId, thì bạn của mình là FriendUser
+                // Nếu mình là FriendId, thì bạn của mình là User
+                var isMeSender = f.UserId == userId;
+                var friendData = isMeSender ? f.FriendUser : f.User;
+
+                return new FriendResponse
                 {
-                    Id = f.UserId == userId ? f.FriendId : f.UserId,
-                    DisplayName = f.UserId == userId ? f.FriendUser.DisplayName : f.User.DisplayName,
-                    AvatarUrl = f.UserId == userId ? f.FriendUser.AvatarUrl : f.User.AvatarUrl,
-                    Subtitle = "Bạn bè"
-                }).ToListAsync();
+                    Id = friendData.Id,
+                    DisplayName = friendData.DisplayName ?? "Thành viên bav",
+                    AvatarUrl = friendData.AvatarUrl,
+                    Subtitle = "Sinh viên Học viện Ngân hàng"
+                };
+            }).ToList();
         }
 
-        // 2. Chấp nhận kết bạn (Chuyển từ FriendRequests sang Friends)
-        public async Task<bool> AcceptFriendRequestAsync(Guid requestId)
+        // 2. Chấp nhận kết bạn (Sửa Guid -> int requestId)
+        public async Task<bool> AcceptFriendRequestAsync(int requestId)
         {
+            // Tìm yêu cầu dựa trên Id (int)
             var request = await _context.FriendRequests.FindAsync(requestId);
-            if (request == null) return false;
 
-            // Thêm vào bảng Friends
+            // Nếu không tìm thấy hoặc yêu cầu đã được xử lý (Status != "0")
+            if (request == null || request.Status != "0") return false;
+
+            // Thêm vào bảng Friends để xác nhận quan hệ bạn bè
             var friendship = new Friend
             {
                 UserId = request.SenderId,
                 FriendId = request.ReceiverId
             };
+
             _context.Friends.Add(friendship);
 
-            // Xóa hoặc cập nhật status trong bảng FriendRequests
+            // QUAN TRỌNG: Xóa yêu cầu khỏi bảng FriendRequests sau khi chấp nhận để dọn dẹp DB
             _context.FriendRequests.Remove(request);
 
             await _context.SaveChangesAsync();
             return true;
         }
 
-        // 3. Hủy kết bạn (Xóa khỏi bảng Friends)
+        // 3. Từ chối hoặc Gỡ lời mời kết bạn (Bổ sung mới)
+        public async Task<bool> DeclineFriendRequestAsync(int requestId)
+        {
+            var request = await _context.FriendRequests.FindAsync(requestId);
+            if (request == null) return false;
+
+            _context.FriendRequests.Remove(request);
+            await _context.SaveChangesAsync();
+            return true;
+        }
+
+        // 4. Hủy kết bạn
         public async Task<bool> UnfriendAsync(Guid userId, Guid friendId)
         {
             var friend = await _context.Friends.FirstOrDefaultAsync(f =>

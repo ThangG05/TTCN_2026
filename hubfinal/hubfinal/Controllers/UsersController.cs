@@ -1,5 +1,6 @@
 ﻿using hubfinal.Data; // Thêm namespace này để dùng AppDbContext
 using hubfinal.DTOs.User;
+using hubfinal.Entities;
 using hubfinal.Helpers;
 using hubfinal.Services;
 using Microsoft.AspNetCore.Authorization;
@@ -60,20 +61,13 @@ namespace hubfinal.Controllers
 
             return Ok(new { avatarUrl = avatarPath });
         }
-
-        [Authorize] // Nên thêm Authorize để bảo mật và lấy đúng currentUserId
+        [Authorize]
         [HttpGet("search")]
         public async Task<IActionResult> SearchByDisplayName([FromQuery] string name)
         {
-            // Lưu ý: Sử dụng _currentUser.UserId hoặc _currentUser.Id tùy theo class CurrentUser của bạn
             var currentUserId = _currentUser.UserId;
+            if (string.IsNullOrEmpty(name)) return BadRequest("Tên tìm kiếm không được để trống.");
 
-            if (string.IsNullOrEmpty(name))
-            {
-                return BadRequest("Tên tìm kiếm không được để trống.");
-            }
-
-            // Sử dụng _context đã được inject ở trên
             var users = await _context.Users
                 .AsNoTracking()
                 .Where(u => u.Id != currentUserId && u.DisplayName != null && u.DisplayName.Contains(name))
@@ -82,17 +76,119 @@ namespace hubfinal.Controllers
                     u.Id,
                     u.DisplayName,
                     u.AvatarUrl,
-                    // Logic kiểm tra quan hệ dựa trên 2 bảng bạn đã tạo
-                    IsFriend = _context.Friends.Any(f => f.UserId == currentUserId && f.FriendId == u.Id),
-                    HasSentRequest = _context.FriendRequests.Any(fr =>
-    fr.SenderId == currentUserId &&
-    fr.ReceiverId == u.Id &&
-    fr.Status == 0) // 0 tương ứng với Pending như bạn đã định nghĩa trong Entity
+                    IsFriend = _context.Friends.Any(f => (f.UserId == currentUserId && f.FriendId == u.Id) || (f.FriendId == currentUserId && f.UserId == u.Id)),
+                    HasSentRequest = _context.FriendRequests.Any(fr => fr.SenderId == currentUserId && fr.ReceiverId == u.Id && fr.Status == "0"),
+                    // MỚI: Kiểm tra xem người này có đang gửi lời mời cho mình không
+                    IsIncomingRequest = _context.FriendRequests.Any(fr => fr.SenderId == u.Id && fr.ReceiverId == currentUserId && fr.Status == "0")
                 })
                 .Take(20)
                 .ToListAsync();
 
             return Ok(users);
         }
+
+        [Authorize]
+        [HttpPost("send-request/{receiverId}")]
+        public async Task<IActionResult> SendFriendRequest(string receiverId)
+        {
+            if (!Guid.TryParse(receiverId, out Guid receiverGuid)) return BadRequest("ID không hợp lệ.");
+            var currentUserId = _currentUser.UserId;
+
+            // SỬA: Kiểm tra cả 2 chiều để tránh tạo dòng dữ liệu trùng lặp
+            var existingRequest = await _context.FriendRequests
+                .AnyAsync(fr => ((fr.SenderId == currentUserId && fr.ReceiverId == receiverGuid) ||
+                                 (fr.SenderId == receiverGuid && fr.ReceiverId == currentUserId)) &&
+                                 fr.Status == "0");
+
+            if (existingRequest) return BadRequest("Lời mời đã tồn tại giữa hai người.");
+
+            var friendRequest = new hubfinal.Entities.FriendRequest
+            {
+                SenderId = currentUserId,
+                ReceiverId = receiverGuid,
+                Status = "0",
+                CreatedAt = DateTime.Now
+            };
+
+            _context.FriendRequests.Add(friendRequest);
+            await _context.SaveChangesAsync();
+            return Ok();
+        }
+        // Lấy danh sách lời mời kết bạn ĐẾN mình
+        [Authorize]
+        [HttpGet("pending-requests")]
+        public async Task<IActionResult> GetPendingRequests()
+        {
+            var currentUserId = _currentUser.UserId;
+
+            var requests = await _context.FriendRequests
+                .AsNoTracking()
+                .Where(fr => fr.ReceiverId == currentUserId && fr.Status == "0")
+                .Select(fr => new
+                {
+                    fr.Id, // ID của bản ghi FriendRequest (kiểu int trong DB của bạn)
+                    SenderId = fr.SenderId,
+                    DisplayName = fr.Sender.DisplayName,
+                    AvatarUrl = fr.Sender.AvatarUrl
+                })
+                .ToListAsync();
+
+            return Ok(requests);
+        }
+
+        [Authorize]
+        [HttpPost("accept-request/{requestId}")]
+        public async Task<IActionResult> AcceptFriendRequest(int requestId)
+        {
+            // 1. Tìm lời mời dựa trên requestId (kiểu int khớp với DB)
+            var request = await _context.FriendRequests.FindAsync(requestId);
+
+            if (request == null)
+            {
+                return NotFound("Không tìm thấy lời mời kết bạn.");
+            }
+
+            // 2. Cập nhật trạng thái thành "1" (Dạng chuỗi khớp với nvarchar)
+            request.Status = "1";
+
+            // 3. Khởi tạo quan hệ bạn bè mới
+            // Sử dụng tên đầy đủ để tránh lỗi CS0117 nếu có xung đột lớp
+            var friendRelation = new hubfinal.Entities.Friend
+            {
+                UserId = request.ReceiverId,
+                FriendId = request.SenderId,
+            };
+
+            try
+            {
+                _context.Friends.Add(friendRelation);
+
+                // Cập nhật lại bản ghi FriendRequest
+                _context.FriendRequests.Update(request);
+
+                await _context.SaveChangesAsync();
+                return Ok(new { message = "Đã chấp nhận lời mời kết bạn." });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"Lỗi khi lưu dữ liệu: {ex.Message}");
+            }
+        }
+        [Authorize]
+        [HttpDelete("decline-request/{requestId}")]
+        public async Task<IActionResult> DeclineFriendRequest(int requestId)
+        {
+            // Tìm lời mời dựa trên Id (kiểu int)
+            var request = await _context.FriendRequests.FindAsync(requestId);
+
+            if (request == null) return NotFound("Không tìm thấy lời mời.");
+
+            // Xóa lời mời khỏi Database
+            _context.FriendRequests.Remove(request);
+            await _context.SaveChangesAsync();
+
+            return Ok(new { message = "Đã gỡ lời mời kết bạn." });
+        }
+
     }
 }

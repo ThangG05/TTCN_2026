@@ -1,44 +1,50 @@
-import 'package:app_hubfinal/modules/user/user_search_dto.dart';
 import 'package:flutter/material.dart';
+import 'package:app_hubfinal/modules/user/user_search_dto.dart';
+
 import 'user_api.dart';
 import '../../core/storage/token_storage.dart';
-// Giả sử bạn đặt UserSearchDto ở cùng thư mục hoặc file models
 
 class UserProvider extends ChangeNotifier {
   bool _isLoading = false;
-  Map<String, dynamic>? _userData;
-
-  // --- PHẦN MỚI CHO TÌM KIẾM ---
-  List<UserSearchDto> _searchResults = [];
   bool _isSearching = false;
 
-  // Getters
+  Map<String, dynamic>? _userData;
+
+  List<UserSearchDto> _searchResults = [];
+  List<Map<String, dynamic>> _pendingRequests = [];
+
   bool get isLoading => _isLoading;
-  Map<String, dynamic>? get userData => _userData;
+  bool get isSearching => _isSearching;
   bool get isLoggedIn => _userData != null;
 
-  // Getters cho tìm kiếm
-  List<UserSearchDto> get searchResults => _searchResults;
-  bool get isSearching => _isSearching;
+  Map<String, dynamic>? get userData => _userData;
 
-  // --- LOGIC CŨ ---
+  List<UserSearchDto> get searchResults => _searchResults;
+
+  List<Map<String, dynamic>> get pendingRequests => _pendingRequests;
+
+  // =============================
+  // LOAD CURRENT USER
+  // =============================
+
   Future<void> loadMe() async {
-    _isLoading = true;
+    _setLoading(true);
+
     try {
       final data = await UserApi.getMe();
-      if (data != null) {
-        _userData = data;
-      }
+      _userData = data;
     } catch (e) {
-      debugPrint("❌ Load Me Error: $e");
+      debugPrint("LoadMe Error: $e");
       _userData = null;
-    } finally {
-      _isLoading = false;
-      notifyListeners();
     }
+
+    _setLoading(false);
   }
 
-  // --- LOGIC TÌM KIẾM MỚI ---
+  // =============================
+  // SEARCH USERS
+  // =============================
+
   Future<void> searchUsers(String name) async {
     if (name.trim().isEmpty) {
       _searchResults = [];
@@ -50,85 +56,191 @@ class UserProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      // Gọi đến hàm searchUsers trong UserApi (bạn cần cập nhật UserApi nữa)
       final List<dynamic>? data = await UserApi.searchUsers(name);
 
       if (data != null) {
-        _searchResults = data.map((e) => UserSearchDto.fromJson(e)).toList();
+        _searchResults =
+            data.map((e) => UserSearchDto.fromJson(e)).toList();
       } else {
         _searchResults = [];
       }
     } catch (e) {
-      debugPrint("❌ Search Error: $e");
+      debugPrint("SearchUsers Error: $e");
       _searchResults = [];
-    } finally {
-      _isSearching = false;
-      notifyListeners();
     }
+
+    _isSearching = false;
+    notifyListeners();
   }
 
-  // --- CÁC HÀM CẬP NHẬT DỮ LIỆU ---
+  // =============================
+  // UPDATE PROFILE
+  // =============================
+
   Future<bool> updateProfile(String? displayName, String? bio) async {
     _setLoading(true);
+
     try {
-      final success = await UserApi.updateProfile(displayName: displayName, bio: bio);
-      if (success) await loadMe();
+      final success = await UserApi.updateProfile(
+        displayName: displayName,
+        bio: bio,
+      );
+
+      if (success) {
+        await loadMe();
+      }
+
       return success;
     } catch (e) {
+      debugPrint("UpdateProfile Error: $e");
       return false;
     } finally {
       _setLoading(false);
     }
   }
+
+  // =============================
+  // UPDATE AVATAR
+  // =============================
 
   Future<bool> updateAvatar(String filePath) async {
     _setLoading(true);
+
     try {
       final avatarUrl = await UserApi.updateAvatar(filePath);
-      if (avatarUrl != null) await loadMe();
+
+      if (avatarUrl != null) {
+        await loadMe();
+      }
+
       return avatarUrl != null;
     } catch (e) {
+      debugPrint("UpdateAvatar Error: $e");
       return false;
     } finally {
       _setLoading(false);
     }
   }
 
-  Future<void> logout() async {
-    await TokenStorage.clear();
-    _userData = null;
-    _searchResults = []; // Xóa kết quả tìm kiếm khi logout
+  // =============================
+  // SEND FRIEND REQUEST
+  // =============================
+
+  Future<bool> sendRequest(String receiverId) async {
+    try {
+      final success = await UserApi.sendFriendRequest(receiverId);
+
+      if (!success) return false;
+
+      final index =
+      _searchResults.indexWhere((user) => user.id == receiverId);
+
+      if (index != -1) {
+        final user = _searchResults[index];
+
+        // CẬP NHẬT Ở ĐÂY: Thêm isIncomingRequest
+        _searchResults[index] = UserSearchDto(
+          id: user.id,
+          displayName: user.displayName,
+          bio: user.bio,
+          avatarUrl: user.avatarUrl,
+          isFriend: user.isFriend,
+          hasSentRequest: true, // Đánh dấu đã gửi thành công
+          isIncomingRequest: user.isIncomingRequest, // Giữ nguyên trạng thái cũ
+        );
+
+        notifyListeners();
+      }
+
+      return true;
+    } catch (e) {
+      debugPrint("SendRequest Error: $e");
+      return false;
+    }
+  }
+  // =============================
+  // LOAD FRIEND REQUESTS
+  // =============================
+
+  Future<void> loadPendingRequests() async {
+    try {
+      final data = await UserApi.getPendingRequests();
+
+      if (data != null) {
+        _pendingRequests = List<Map<String, dynamic>>.from(data);
+      } else {
+        _pendingRequests = [];
+      }
+
+      debugPrint("PendingRequests: $_pendingRequests");
+    } catch (e) {
+      debugPrint("LoadPendingRequests Error: $e");
+      _pendingRequests = [];
+    }
+
     notifyListeners();
   }
+
+  // =============================
+  // ACCEPT FRIEND
+  // =============================
+
+  Future<bool> acceptFriend(int requestId) async {
+    try {
+      final success = await UserApi.acceptRequest(requestId);
+
+      if (success) {
+        _pendingRequests.removeWhere((req) => req['id'] == requestId);
+        notifyListeners();
+      }
+
+      return success;
+    } catch (e) {
+      debugPrint("AcceptFriend Error: $e");
+      return false;
+    }
+  }
+
+  // =============================
+  // DECLINE FRIEND
+  // =============================
+
+  Future<bool> declineFriend(int requestId) async {
+    try {
+      final success = await UserApi.declineRequest(requestId);
+
+      if (success) {
+        _pendingRequests.removeWhere((req) => req['id'] == requestId);
+        notifyListeners();
+      }
+
+      return success;
+    } catch (e) {
+      debugPrint("DeclineFriend Error: $e");
+      return false;
+    }
+  }
+
+  // =============================
+  // LOGOUT
+  // =============================
+
+  Future<void> logout() async {
+    await TokenStorage.clear();
+
+    _userData = null;
+    _searchResults = [];
+    _pendingRequests = [];
+
+    notifyListeners();
+  }
+
+  // =============================
+  // HELPER
+  // =============================
 
   void _setLoading(bool value) {
     _isLoading = value;
     notifyListeners();
-  }
-  // --- THÊM HÀM NÀY VÀO TRONG USERPROVIDER ---
-  Future<bool> sendRequest(String receiverId) async {
-    try {
-      // Gọi API gửi lời mời kết bạn
-      final bool success = await UserApi.sendFriendRequest(receiverId);
-
-      if (success) {
-        // Cập nhật trạng thái hiển thị của User đó trong danh sách kết quả ngay lập tức
-        final index = _searchResults.indexWhere((u) => u.id == receiverId);
-        if (index != -1) {
-          _searchResults[index] = UserSearchDto(
-            id: _searchResults[index].id,
-            displayName: _searchResults[index].displayName,
-            avatarUrl: _searchResults[index].avatarUrl,
-            isFriend: _searchResults[index].isFriend,
-            hasSentRequest: true, // Đánh dấu là đã gửi để UI đổi nút
-          );
-          notifyListeners(); // Vẽ lại giao diện
-        }
-      }
-      return success;
-    } catch (e) {
-      debugPrint("❌ Send Request Error: $e");
-      return false;
-    }
   }
 }
