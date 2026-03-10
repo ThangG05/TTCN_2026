@@ -12,18 +12,17 @@ namespace hubfinal.Services
 
         public async Task<List<FriendResponse>> GetMyFriendsAsync(Guid userId)
         {
-            // Bước 1: Lấy danh sách thô từ DB kèm thông tin User liên quan
+            
             var friendships = await _context.Friends
                 .Include(f => f.User)
                 .Include(f => f.FriendUser)
                 .Where(f => f.UserId == userId || f.FriendId == userId)
                 .ToListAsync();
 
-            // Bước 2: Map sang Response ở bộ nhớ
+            
             return friendships.Select(f =>
             {
-                // Nếu mình là UserId, thì bạn của mình là FriendUser
-                // Nếu mình là FriendId, thì bạn của mình là User
+                
                 var isMeSender = f.UserId == userId;
                 var friendData = isMeSender ? f.FriendUser : f.User;
 
