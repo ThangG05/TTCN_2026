@@ -1,4 +1,5 @@
 import '../../core/config/app_config.dart';
+import '../../utils/img_helper.dart';
 
 class FriendModel {
   final String id;
@@ -14,23 +15,13 @@ class FriendModel {
     this.avatarUrl,
     required this.subtitle,
   });
-
   factory FriendModel.fromJson(Map<String, dynamic> json) {
-    // Debug: Xem dữ liệu thực tế từ Server
-    print("Đang parse friend: $json");
-
-    String? avatar = json['avatarUrl'];
-
-    // Xử lý logic nối URL ảnh giống UserSearchDto:
-    if (avatar != null && avatar.isNotEmpty && avatar.startsWith('/')) {
-      avatar = "${AppConfig.serverUrl}$avatar";
-    }
-
     return FriendModel(
-      id: json['id'].toString(), // Ép kiểu string để tránh lỗi Guid/Int
+      id: json['id'].toString(),
       displayName: json['displayName'] ?? 'Thành viên Hub',
       bio: json['bio'] ?? 'Thành viên Hub',
-      avatarUrl: avatar, // Đã được nối ServerUrl nếu cần
+      // Gọi hàm dùng chung thay vì viết logic if/else tại đây
+      avatarUrl: ImageHelper.formatImageUrl(json['avatarUrl']),
       subtitle: json['subtitle'] ?? 'Sinh viên Học viện Ngân hàng',
     );
   }

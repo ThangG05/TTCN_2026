@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../chat/home_chat_page.dart';
+import '../chat/pages/chat_list_page.dart';
 import '../user/pages/profile_page.dart';
 import 'home_feed_page.dart';
 
@@ -18,7 +18,7 @@ class _BottomNavState extends State<BottomNav> {
     Center(child: Text("Post Page")),
     Center(child: Text("Notification Page")),
     ProfilePage(),
-    MessageScreen(),
+    ChatListPage(),
   ];
 
   @override

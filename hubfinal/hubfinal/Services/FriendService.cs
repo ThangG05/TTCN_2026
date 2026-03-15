@@ -22,7 +22,6 @@ namespace hubfinal.Services
             
             return friendships.Select(f =>
             {
-                
                 var isMeSender = f.UserId == userId;
                 var friendData = isMeSender ? f.FriendUser : f.User;
 
@@ -31,12 +30,11 @@ namespace hubfinal.Services
                     Id = friendData.Id,
                     DisplayName = friendData.DisplayName ?? "Thành viên bav",
                     AvatarUrl = friendData.AvatarUrl,
-                    Subtitle = "Sinh viên Học viện Ngân hàng"
+                    Subtitle = friendData.Bio,
                 };
             }).ToList();
         }
 
-        // 2. Chấp nhận kết bạn (Sửa Guid -> int requestId)
         public async Task<bool> AcceptFriendRequestAsync(int requestId)
         {
             // Tìm yêu cầu dựa trên Id (int)
